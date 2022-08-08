@@ -1,0 +1,328 @@
+---
+title: ""
+author: ""
+date: ""
+output:
+  pdf_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load_libraries_and_functions, echo = FALSE, warning = FALSE, message = FALSE}
+
+  library(tidyverse)
+  library(dplyr)
+  library(plyr)
+  library(jagsUI)
+
+  unlogit <- function(x) exp(x) / (1 + exp(x))
+
+  knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE, fig.width = 8, fig.height = 8)
+
+```
+
+```{r Read in data}
+# Import data
+  #dat <- read.csv("C:/Users/s429217/onedrive/data/koala/loctrees_sub_trees.csv")
+  #dat <- read.csv("C:/Users/s429217/onedrive/data/koala/loctrees_sub_trees_29062021.csv")
+dat <- read.csv("d:/bernd/r/ikoala/loctrees_sub_trees_08072021.csv")
+# subset variables
+
+#summarise occurrence accross 
+kocc<-  plyr::ddply( dat,.(SITE_VISIT_ID,LOCATION_ID, PLANNED_EASTING, PLANNED_NORTHING, subarea, period), summarise, occ=as.numeric(sum(KFP)>0), act=sum(KFP>0), len=length(KFP))
+
+
+
+  
+  period <- kocc$period
+  subarea <- kocc$subarea
+
+# remove first column with plot names
+  y <- kocc$act
+  
+# sum across rows to get number of trees with kfp detected at a plot level  
+  N <- length(y)
+  
+```
+
+# Modelling approach
+
+At plots where kfps were found, there is considerable heterogeneity in detection probability. Detection probability will be much higher at plots where many trees had kfps relative to plots where few trees had kfps  (Figure \ref{fig:fig1}).
+
+```{r Figure 1, fig.cap = "\\label{fig:fig1} At plots where kfps were found, the number of trees at which kfps were detected."}
+
+  a <- table(y)
+  n.tree.detect <- 1:15
+  freq <- a[match(n.tree.detect, as.numeric(names(a)))]
+  freq[is.na(freq)] <- 0
+  names(freq) <- n.tree.detect
+  barplot(freq, ylab = "Frequency", xlab = "Number of trees with detection (out of 30)")
+  
+```
+
+This heterogeneity in detection probability potentially arises from variation among plots in koala abundance. Higher abundance at some plots leads to more trees where kfps are found. We assume that the heterogeneity in detection probability is a function of variation in abundance and exploit this to model the underlying distribution of abundances and occupancy (plots with zero abundance) (Royle & Nichols 2003).  
+
+We assume that there are $K_i$ koalas at plot $i$, with variation in the abundance of koalas across plots following a negative binomial distribution (to allow for a potentially wide spread of abundances). Hence:
+
+\begin{equation}
+  \label{eqn:1}
+  K_i\sim\text{NegBionmial}(\mu,\theta)
+\end{equation}
+
+Where $\mu$ is the mean abundance of koalas per plot and $\theta$ is a dispersion term.  
+
+Let each koala at a plot have probability $r$ of being detected when we sample a tree. That is, if one koala is present at a plot, $r$ is the probability we would find a kfp beneath a randomly chosen tree. The probability $r$ thus includes both the probability that a koala defecated in the tree we sample and the probability that an observer found one or more kfps given they were present. If there are $K_i$ koalas at a plot, then an individual tree has probability $p$ that a kfp will be found under that tree, given by:
+
+\begin{equation}
+  \label{eqn:2}
+  p=1-(1-r)^{K_i}
+\end{equation}
+
+There are 30 trees sampled at each plot and so the number of trees under which we expect to find kfps is:
+
+\begin{equation}
+  \label{eqn:3}
+  y_i\sim\text{Bionmial}(p,30)
+\end{equation}
+
+Where $y_i$ is the number of trees where kfps were detected at each plot.  
+
+We can use the data $y_i$ to estimate the mean abundance of koalas per plot $\mu$ and the number of occupied plots, which are plots where $K_i$ is greater than zero, using an MCMC sampler.
+
+
+```{r modelbysubarea}
+# Royle-Nichols model with negative binomial
+    
+mod <- "model {
+  for(i in 1:N) {
+    y[i] ~ dbin(p[i], 30)
+    p[i] <- 1 - (1 - r) ^ K[i]
+    K[i] ~ dnegbin(prob_nb[i], theta)
+    prob_nb[i] <- theta / (theta + mu[i])
+    log(mu[i]) <- b[subarea[i], period[i]]
+  }
+
+  for(i in 1:5) {
+    for(j in 1:3) {
+      b[i, j] ~ dnorm(0, 0.1)
+    }
+  }
+  logit(r) <- lr
+  lr ~ dnorm(0, 0.1)
+  theta ~ dunif(0, 100)
+
+}"  
+
+write(mod, "model.txt")
+
+# Sample model in JAGS with three chains
+mod.jags <- jags(model = "model.txt",
+            data = list(y = y, N = N, period = period, subarea = subarea),
+              inits = function() list(K = y), 
+              param = c("b", "lr", "theta", "K"),
+              n.chains = 3,
+              n.iter =10000,
+              n.burnin = 1000,
+              parallel = T)  
+  
+  out <- mod.jags$summary
+  
+```
+
+```{r Figure 2, fig.cap = "\\label{fig:fig2} Estimated mean number of koalas per plot by time period and subarea."}
+
+  ob <- as.data.frame(out[1:15, c(1, 2, 3, 7)])
+  names(ob) <- c("mean", "se", "lcl", "ucl")
+  ob$period <- rep(1:3, each = 5)
+  ob$subarea <- rep(1:5, 3)
+
+  ggplot(ob, aes(y = exp(mean), x = period)) +
+    geom_point(size = 6) +
+    geom_line() +
+    geom_errorbar(aes(ymin = exp(lcl), ymax = exp(ucl)), width = 0.2, lwd = 1.1) +
+    facet_wrap(~subarea) +
+    theme_bw()
+  
+```
+  
+```{r}
+
+##################################################################################  
+# proportion occupied (if K = 0 then there were no koalas)
+# extract all the K values from the MCMC runs
+  tout <- mod.jags$sims.list$K
+# convert to presence/absence of koala
+  tout <- ifelse(tout > 0, 1, 0)
+
+# number of plots per period per subarea  
+  nsites <- table(kocc$subarea, kocc$period)
+  occ <- array(dim = c(5, 3, nrow(tout)))
+  prop.occ <- array(dim = c(5, 3, nrow(tout)))
+
+# calculate number of occupied plots for each subarea and period  
+  for(i in 1:nrow(tout)) {
+    occ[, , i] <- tapply(tout[i, ], list(subarea, period), sum)
+    prop.occ[, , i] <- occ[, , i] / nsites
+  }
+  
+# convert to a useable form
+  po <- data.frame(occ = apply(prop.occ, c(1, 2), mean),
+                   lcl = apply(prop.occ, c(1, 2), function(x) quantile(x, 0.025)),
+                   ucl = apply(prop.occ, c(1, 2), function(x) quantile(x, 0.975)))
+  
+
+  occ <- c(po$occ.1, po$occ.2, po$occ.3)
+  lcl <- c(po$lcl.1, po$lcl.2, po$lcl.3)
+  ucl <- c(po$ucl.1, po$ucl.2, po$ucl.3)
+  
+  eo <- data.frame(occ = occ,
+                   lcl = lcl, 
+                   ucl = ucl,
+                   subarea = rep(1:5, 3),
+                   period = rep(1:3, each = 5))
+  
+```
+
+```{r Figure 3, fig.cap = "\\label{fig:fig3} Estimated occupancy of plots by time period and subarea."}
+ ttb <- table( kocc$period, kocc$subarea)
+tto <- table( kocc$period[kocc$occ>0], kocc$subarea[kocc$occ>0])
+obs_occ <- data.frame(x=rep(1:3, 5), y=as.numeric(tto/ttb), subarea=rep(1:5,each=3)) 
+  
+  ggplot(eo, aes(y = occ, x = period)) +
+    geom_point(size = 6) +
+    geom_line() +
+    geom_errorbar(aes(ymin = lcl, ymax = ucl), width = 0.2, lwd = 1.1) +  geom_point( data=obs_occ,aes(x=x, y=y), col="orange", cex=2)+
+    facet_wrap(~subarea) +
+    theme_bw()
+  
+```
+
+# Modelled by period
+
+
+```{r modelbyperiod}
+# Royle-Nichols model with negative binomial for period only
+    
+mod <- "model {
+  for(i in 1:N) {
+    y[i] ~ dbin(p[i], 30)
+    p[i] <- 1 - (1 - r) ^ K[i]
+    K[i] ~ dnegbin(prob_nb[i], theta)
+    prob_nb[i] <- theta / (theta + mu[i])
+    log(mu[i]) <- b[period[i]]
+  }
+
+  for(i in 1:3) {
+    b[i] ~ dnorm(0, 0.1)
+  }
+  logit(r) <- lr
+  lr ~ dnorm(0, 0.1)
+  theta ~ dunif(0, 100)
+
+}"  
+
+write(mod, "model2.txt")
+
+# Sample model in JAGS with three chains
+mod.jags2 <- jags(model = "model2.txt",
+            data = list(y = y, N = N, period = period),
+              inits = function() list(K = y), 
+              param = c("b", "lr", "theta", "K"),
+              n.chains = 3,
+              n.iter =10000,
+              n.burnin = 1000,
+              parallel = T)  
+  
+  out2 <- mod.jags2$summary
+  
+```
+
+```{r Figure 4, fig.cap = "\\label{fig:fig4} Estimated mean number of koalas per plot by time period."}
+
+  ob <- as.data.frame(out2[1:3, c(1, 2, 3, 7)])
+  names(ob) <- c("mean", "se", "lcl", "ucl")
+  ob$period <- 1:3
+
+  ggplot(ob, aes(y = exp(mean), x = period)) +
+    geom_point(size = 6) +
+    geom_line() +
+    geom_errorbar(aes(ymin = exp(lcl), ymax = exp(ucl)), width = 0.2, lwd = 1.1) +
+    ylim(0, 3) +
+    theme_bw()
+  
+```
+
+```{r}
+
+##################################################################################  
+# proportion occupied (if K = 0 then there were no koalas)
+# extract all the K values from the MCMC runs
+  tout <- mod.jags2$sims.list$K
+# convert to presence/absence of koala
+  tout <- ifelse(tout > 0, 1, 0)
+
+# number of plots per period 
+  nsites <- table(kocc$period)
+  occ <- matrix(nrow = nrow(tout), ncol = 3)
+  prop.occ <- matrix(nrow = nrow(tout), ncol = 3)
+
+# calculate number of occupied plots for each period  
+  for(i in 1:nrow(tout)) {
+    occ[i, ] <- tapply(tout[i, ], period, sum)
+    prop.occ[i, ] <- occ[i, ] / nsites
+  }
+  
+# convert to a useable form
+  po <- data.frame(occ = apply(prop.occ, 2, mean),
+                   lcl = apply(prop.occ, 2, function(x) quantile(x, 0.025)),
+                   ucl = apply(prop.occ, 2, function(x) quantile(x, 0.975)))
+  
+  po$period <- 1:3
+
+```
+
+```{r Figure 5, fig.cap = "\\label{fig:fig5} Estimated occupancy of plots by time period."}
+  
+ttb <- table( kocc$period)
+tto <- table( kocc$period[kocc$occ>0])
+obs_occ <- data.frame(x=1:3, y=as.numeric(tto/ttb))
+  
+  ggplot()+   geom_point(data=po, aes(y = occ, x = period),size = 6) +
+    geom_line() +
+    geom_errorbar(aes(x=1:3,ymin = po$lcl, ymax = po$ucl), width = 0.2, lwd = 1.1) +
+#    ylim(0, 0.3) +
+     geom_point( data=obs_occ,aes(x=x, y=y), col="orange", cex=2)+
+    theme_bw()
+  
+```
+
+
+```{r}
+
+# Change in occupancy between time periods
+
+  diff12 <- prop.occ[, 2] - prop.occ[, 1]
+  diff23 <- prop.occ[, 3] - prop.occ[, 2]
+  diff13 <- prop.occ[, 3] - prop.occ[, 1]
+  
+# convert to a useable form
+  co <- data.frame(diff = c(mean(diff12), mean(diff23), mean(diff13)),
+                   lcl = c(quantile(diff12, 0.025), quantile(diff23, 0.025), quantile(diff13, 0.025)),
+                   ucl = c(quantile(diff12, 0.975), quantile(diff23, 0.975), quantile(diff13, 0.975)))
+
+  co$period <- c("1 to 2", "2 to 3", "1 to 3")
+  co$period <- factor(co$period, levels = c("1 to 2", "2 to 3", "1 to 3"))
+  
+  ggplot(co, aes(y = diff, x = period)) +
+    geom_point(size = 6) +
+    geom_line() +
+    geom_errorbar(aes(ymin = lcl, ymax = ucl), width = 0.2, lwd = 1.1) +
+#    ylim(-0.05, 0.05) +
+    geom_hline(yintercept = 0) +
+    theme_bw()
+  
+  
+
+```
+
+
