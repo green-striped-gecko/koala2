@@ -23,17 +23,16 @@ editor_options:
 
 ```{r Read in data}
 # Import data
-  #dat <- read.csv("C:/Users/s429217/onedrive/data/koala/loctrees_sub_trees.csv")
-  #dat <- read.csv("C:/Users/s429217/onedrive/data/koala/loctrees_sub_trees_29062021.csv")
-dat <- read.csv("d:/bernd/r/ikoala/loctrees_sub_trees_08072021.csv")
-# subset variables
+
+
+
+dat <- read.csv("./data/loctrees_sub_trees_08072021.csv")
+
 
 #summarise occurrence accross 
 kocc<-  plyr::ddply( dat,.(SITE_VISIT_ID,LOCATION_ID, PLANNED_EASTING, PLANNED_NORTHING, subarea, period), summarise, occ=as.numeric(sum(KFP)>0), act=sum(KFP>0), len=length(KFP))
 
 
-
-  
   period <- kocc$period
   subarea <- kocc$subarea
 
@@ -89,7 +88,7 @@ Where $y_i$ is the number of trees where kfps were detected at each plot.
 
 We can use the data $y_i$ to estimate the mean abundance of koalas per plot $\mu$ and the number of occupied plots, which are plots where $K_i$ is greater than zero, using an MCMC sampler.
 
-
+`r knitr::knit_exit()`
 ```{r modelbysubarea}
 # Royle-Nichols model with negative binomial
     
