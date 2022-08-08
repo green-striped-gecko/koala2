@@ -26,7 +26,7 @@ editor_options:
 
 
 
-dat <- read.csv("./data/loctrees_sub_trees_08072021.csv")
+dat <- read.csv("loctrees_sub_trees_08072021.csv")
 
 
 #summarise occurrence accross 
