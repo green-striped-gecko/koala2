@@ -1,0 +1,17 @@
+model {
+  for(i in 1:N) {
+    y[i] ~ dbin(p[i], 30)
+    p[i] <- 1 - (1 - r) ^ K[i]
+    K[i] ~ dnegbin(prob_nb[i], theta)
+    prob_nb[i] <- theta / (theta + mu[i])
+    log(mu[i]) <- b[period[i]]
+  }
+
+  for(i in 1:3) {
+    b[i] ~ dnorm(0, 0.1)
+  }
+  logit(r) <- lr
+  lr ~ dnorm(0, 0.1)
+  theta ~ dunif(0, 100)
+
+}
