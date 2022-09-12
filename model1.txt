@@ -1,6 +1,6 @@
 model {
   for(i in 1:N) {
-    y[i] ~ dbin(p[i], 30)
+    y[i] ~ dbin(p[i], n.tree[i])
     p[i] <- 1 - (1 - r) ^ K[i]
     K[i] ~ dnegbin(prob_nb[i], theta)
     prob_nb[i] <- theta / (theta + mu[i])
