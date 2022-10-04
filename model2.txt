@@ -1,0 +1,25 @@
+model {
+  for(i in 1:N) {
+    # Occupancy as Bernoulli variable
+    z[i] ~ dbern(psi[period[i]])
+
+    # Detection times follow Weibull distribution
+    ttd[i] ~ dweib(shape, lambda)
+    
+    # Model for censoring 
+    isCensored[i] ~ dbern(theta[i])
+    theta[i] <- z[i] * step(ttd[i] - Tmax[i]) + (1 - z[i])
+
+  }
+
+  # Uninformative priors
+  for(i in 1:3) {
+    psi[i] ~ dunif(0, 1)
+  }
+  lambda ~ dgamma(0.01, 0.01)
+  shape ~ dgamma(0.01, 0.01)
+
+  # Estimated number of occupancies
+  N_occ <- sum(z[])
+
+}
