@@ -8,7 +8,7 @@ model {
  
     # Model for censoring 
     isCensored[i] ~ dbern(theta[i])
-    theta[i] <- z[i] * step(ttd[i] - Tmax) + (1 - z[i])
+    theta[i] <- z[i] * step(ttd[i] - Tmax[i]) + (1 - z[i])
 
   }
 
@@ -19,8 +19,8 @@ model {
   lambda ~ dgamma(0.01, 0.01)
   shape ~ dgamma(0.01, 0.01)
 
-  # Estimated detection probability within search period
-  D.hat <- 1 - exp(-lambda * Tmax ^ shape)
+  # Estimated detection probability within search period (if 30 trees searched)
+  D.hat <- 1 - exp(-lambda * 30 ^ shape)
 
   # Estimated number of occupancies
   N_occ <- sum(z[])
