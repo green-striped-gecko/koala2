@@ -5,7 +5,7 @@ model {
 
     # Detection times follow Weibull distribution
     ttd[i] ~ dweib(shape, lambda)
- 
+    
     # Model for censoring 
     isCensored[i] ~ dbern(theta[i])
     theta[i] <- z[i] * step(ttd[i] - Tmax[i]) + (1 - z[i])

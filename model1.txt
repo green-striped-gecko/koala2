@@ -4,7 +4,7 @@ model {
     p[i] <- 1 - (1 - r) ^ K[i]
     K[i] ~ dnegbin(prob_nb[i], theta)
     prob_nb[i] <- theta / (theta + mu[i])
-    log(mu[i]) <- b[period[i]]
+    log(mu[i]) <- b[period[i]] 
   }
 
   for(i in 1:3) {
