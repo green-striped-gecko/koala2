@@ -27,3 +27,5 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 loctrees_sub_trees_08072021.csv
+### model files
+*.txt
